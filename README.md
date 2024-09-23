@@ -1,3 +1,5 @@
+[![Java CI with Maven for apache-beam-fun](https://github.com/starnowski/apache-beam-fun/actions/workflows/maven.yml/badge.svg)](https://github.com/starnowski/apache-beam-fun/actions/workflows/maven.yml)
+
 # apache-beam-fun
 Apache Beam fun
 
