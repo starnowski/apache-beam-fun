@@ -12,15 +12,24 @@ import org.apache.beam.sdk.options.*;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.junit.After;
+import org.jboss.byteman.contrib.bmunit.BMRule;
+import org.jboss.byteman.contrib.bmunit.BMRules;
+import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
+import org.jboss.byteman.contrib.bmunit.WithByteman;
+//import org.junit.After;
+//import org.junit.Before;
+//import org.junit.Test;
 import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.BigQueryEmulatorContainer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+@WithByteman
 public class CountTest {
 
     // Our static input data, which will make up the initial PCollection.
@@ -31,10 +40,10 @@ public class CountTest {
     static final List<String> WORDS = Arrays.asList(WORDS_ARRAY);
     private static BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3");
 
-    BigQuery bigQuery;
+    static BigQuery bigQuery;
 
-    @Before
-    public void setupDataLake() {
+    @BeforeAll
+    public static void setupDataLake() {
         bigQueryContainer.start();
 //        clearDataSet();
         bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
@@ -46,12 +55,12 @@ public class CountTest {
         createTable();
     }
 
-    @After
-    public void tearDown() {
+    @AfterAll
+    public static void tearDown() {
         bigQueryContainer.stop();
     }
 
-    public void createDataSet() {
+    public static void createDataSet() {
         BigQuery bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
                 .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
                 .setCredentials(NoCredentials.getInstance())
@@ -61,7 +70,7 @@ public class CountTest {
         bigQuery.create(datasetInfo);
     }
 
-    public void createTable() {
+    public static void createTable() {
         Schema schema = Schema.of(
                 Field.of("column_01", StandardSQLTypeName.STRING),
                 Field.of("column_02", StandardSQLTypeName.STRING));
@@ -74,12 +83,23 @@ public class CountTest {
 
 
     @Test
+    @BMUnitConfig(verbose = true, bmunitVerbose = true)
+    @BMRules(rules = {
+            @BMRule(name = "BigQueryOptions getBigQueryEndpoint",
+                    targetClass = "org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions",
+                    targetMethod = "getBigQueryEndpoint",
+                    isInterface = true,
+                    targetLocation = "AT ENTRY",
+                    helper = "com.github.starnowski.apache.beam.fun.BMUnitHelperWithStaticStringProperty",
+                    action = "RETURN getStaticStringProperty()")
+    })
     public void testCount() {
         // Create a test pipeline.
         BigQueryOptions options = PipelineOptionsFactory.as(BigQueryOptions.class);
         options.setBigQueryEndpoint(bigQueryContainer.getEmulatorHttpEndpoint());
         options.setProject(bigQueryContainer.getProjectId());
         options.setTempLocation("nosuch_temp");
+        BMUnitHelperWithStaticStringProperty.setStaticStringProperty(bigQueryContainer.getEmulatorHttpEndpoint());
         Pipeline p = Pipeline.create(options);
 
 
@@ -90,6 +110,8 @@ public class CountTest {
 
     private static final String WEATHER_SAMPLES_TABLE =
             "test-project.samples.weather_stations";
+    private static final String WEATHER_SAMPLES_SUMMARY_TABLE =
+            "test-project.samples.weather_summary";
 
     /**
      * Examines each row in the input table. If a tornado was recorded in that sample, the month in
@@ -178,6 +200,7 @@ public class CountTest {
                 "BigQuery table to write to, specified as "
                         + "<project_id>:<dataset_id>.<table_id>. The dataset must already exist.")
         @Validation.Required
+        @Default.String(WEATHER_SAMPLES_SUMMARY_TABLE)
         String getOutput();
 
         void setOutput(String value);

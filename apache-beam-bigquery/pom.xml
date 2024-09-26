@@ -14,6 +14,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <org.junit.jupiter.version>5.9.0</org.junit.jupiter.version>
         <beam-sdks-java-core.version>2.59.0</beam-sdks-java-core.version>
+        <org.jboss.byteman.version>4.0.23</org.jboss.byteman.version>
     </properties>
 
     <dependencies>
@@ -66,6 +67,37 @@
             <groupId>org.testcontainers</groupId>
             <artifactId>gcloud</artifactId>
             <version>1.20.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-bmunit</artifactId>
+            <version>${org.jboss.byteman.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman</artifactId>
+            <version>${org.jboss.byteman.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-submit</artifactId>
+            <version>${org.jboss.byteman.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-install</artifactId>
+            <version>${org.jboss.byteman.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-bmunit5</artifactId>
+            <version>${org.jboss.byteman.version}</version>
             <scope>test</scope>
         </dependency>
 
