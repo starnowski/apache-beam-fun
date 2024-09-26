@@ -1,29 +1,20 @@
 package com.github.starnowski.apache.beam.fun;
 
 import com.google.api.services.bigquery.model.TableFieldSchema;
-import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
-import com.google.api.services.healthcare.v1.model.Field;
-import com.google.api.services.pubsub.model.Schema;
-import com.google.cloud.bigtable.data.v2.models.TableId;
-import net.bytebuddy.utility.dispatcher.JavaDispatcher;
+import com.google.cloud.NoCredentials;
+import com.google.cloud.bigquery.*;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServicesImpl;
 import org.apache.beam.sdk.options.*;
-import org.apache.beam.sdk.testing.PAssert;
-import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.jupiter.api.BeforeEach;
 import org.testcontainers.containers.BigQueryEmulatorContainer;
 
 import java.util.ArrayList;
@@ -40,19 +31,47 @@ public class CountTest {
     static final List<String> WORDS = Arrays.asList(WORDS_ARRAY);
     private static BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3");
 
+    BigQuery bigQuery;
 
     @Before
     public void setupDataLake() {
         bigQueryContainer.start();
 //        clearDataSet();
-//        createDataSet();
-//        createTable();
+        bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
+                .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
+                .setCredentials(NoCredentials.getInstance())
+                .setProjectId(bigQueryContainer.getProjectId())
+                .build().getService();
+        createDataSet();
+        createTable();
     }
 
     @After
     public void tearDown() {
         bigQueryContainer.stop();
     }
+
+    public void createDataSet() {
+        BigQuery bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
+                .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
+                .setCredentials(NoCredentials.getInstance())
+                .setProjectId(bigQueryContainer.getProjectId())
+                .build().getService();
+        var datasetInfo = DatasetInfo.newBuilder("samples").build();
+        bigQuery.create(datasetInfo);
+    }
+
+    public void createTable() {
+        Schema schema = Schema.of(
+                Field.of("column_01", StandardSQLTypeName.STRING),
+                Field.of("column_02", StandardSQLTypeName.STRING));
+        var tableId = TableId.of("samples", "weather_stations");
+        var tableDefinition = StandardTableDefinition.of(schema);
+        var tableInfo = TableInfo.newBuilder(tableId, tableDefinition).build();
+
+        bigQuery.create(tableInfo);
+    }
+
 
     @Test
     public void testCount() {
@@ -70,7 +89,7 @@ public class CountTest {
     }
 
     private static final String WEATHER_SAMPLES_TABLE =
-            "apache-beam-testing.samples.weather_stations";
+            "test-project.samples.weather_stations";
 
     /**
      * Examines each row in the input table. If a tornado was recorded in that sample, the month in
