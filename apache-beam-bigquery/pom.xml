@@ -29,6 +29,12 @@
             <version>${beam-sdks-java-core.version}</version>
         </dependency>
         <dependency>
+            <groupId>commons-logging</groupId>
+            <artifactId>commons-logging</artifactId>
+            <version>1.2</version> <!-- Check for the latest version -->
+        </dependency>
+
+        <dependency>
             <groupId>org.apache.beam</groupId>
             <artifactId>beam-runners-direct-java</artifactId>
             <version>${beam-sdks-java-core.version}</version>

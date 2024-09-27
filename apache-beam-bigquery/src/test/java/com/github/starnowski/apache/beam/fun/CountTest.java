@@ -1,11 +1,14 @@
 package com.github.starnowski.apache.beam.fun;
 
+import com.google.api.services.bigquery.model.TableDataInsertAllRequest;
 import com.google.api.services.bigquery.model.TableFieldSchema;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
 import com.google.cloud.NoCredentials;
 import com.google.cloud.bigquery.*;
+import com.google.cloud.firestore.FirestoreOptions;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.extensions.gcp.auth.NoopCredentialFactory;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions;
 import org.apache.beam.sdk.options.*;
@@ -24,10 +27,13 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.BigQueryEmulatorContainer;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Network;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 @WithByteman
 public class CountTest {
@@ -38,13 +44,24 @@ public class CountTest {
             "hi", "sue", "", "", "ZOW", "bob", ""};
 
     static final List<String> WORDS = Arrays.asList(WORDS_ARRAY);
-    private static BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3");
+
+    private static Network sharedNetwork = Network.newNetwork();
+    private static GenericContainer<?> csContainer = new GenericContainer<>("fsouza/fake-gcs-server")
+            .withNetwork(sharedNetwork)
+//            .withEnv("GCS_BUCKETS", "test-bucket")
+            .withExposedPorts(4443);
+    private static BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3")
+            .withNetwork(sharedNetwork);
 
     static BigQuery bigQuery;
 
     @BeforeAll
     public static void setupDataLake() {
-        bigQueryContainer.start();
+        csContainer.start();
+        System.out.println("host: " + csContainer.getHost() + ":" + csContainer.getMappedPort(4443));
+        bigQueryContainer
+                .withEnv("STORAGE_EMULATOR_HOST", csContainer.getHost() + ":" + csContainer.getMappedPort(4443))
+                .start();
 //        clearDataSet();
         bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
                 .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
@@ -53,6 +70,15 @@ public class CountTest {
                 .build().getService();
         createDataSet();
         createTable();
+        createTableRecords();
+    }
+
+    private static void createTableRecords() {
+        var tableId = TableId.of("samples", "weather_stations");
+        InsertAllRequest insertAllRequest = InsertAllRequest.newBuilder(tableId)
+                .addRow(InsertAllRequest.RowToInsert.of("x", Map.of("column_01", "Val1", "column_02", "val2"))).build();
+
+        bigQuery.insertAll(insertAllRequest);
     }
 
     @AfterAll
@@ -75,7 +101,11 @@ public class CountTest {
                 Field.of("column_01", StandardSQLTypeName.STRING),
                 Field.of("column_02", StandardSQLTypeName.STRING));
         var tableId = TableId.of("samples", "weather_stations");
-        var tableDefinition = StandardTableDefinition.of(schema);
+        var tableDefinition = StandardTableDefinition.newBuilder().setSchema(schema)
+//                .setNumBytes(Long.valueOf(0L))
+                .setNumBytes(Long.valueOf(1L))
+//                .setNumBytes(Long.valueOf(Integer.MAX_VALUE))
+                .build();
         var tableInfo = TableInfo.newBuilder(tableId, tableDefinition).build();
 
         bigQuery.create(tableInfo);
@@ -92,13 +122,31 @@ public class CountTest {
                     targetLocation = "AT ENTRY",
                     helper = "com.github.starnowski.apache.beam.fun.BMUnitHelperWithStaticStringProperty",
                     action = "RETURN getStaticStringProperty()")
+            ,
+            @BMRule(name = "BigQueryOptions getProject",
+                    targetClass = "org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions",
+                    targetMethod = "getProject",
+                    isInterface = true,
+                    targetLocation = "AT ENTRY",
+                    helper = "com.github.starnowski.apache.beam.fun.BMUnitHelperWithStaticStringProperty",
+                    action = "RETURN \"test-project\"")
+            ,
+            @BMRule(name = "BigQueryOptions getBigQueryProject",
+                    targetClass = "org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions",
+                    targetMethod = "getBigQueryProject",
+                    isInterface = true,
+                    targetLocation = "AT ENTRY",
+                    helper = "com.github.starnowski.apache.beam.fun.BMUnitHelperWithStaticStringProperty",
+                    action = "RETURN \"test-project\"")
     })
     public void testCount() {
         // Create a test pipeline.
         BigQueryOptions options = PipelineOptionsFactory.as(BigQueryOptions.class);
         options.setBigQueryEndpoint(bigQueryContainer.getEmulatorHttpEndpoint());
         options.setProject(bigQueryContainer.getProjectId());
-        options.setTempLocation("nosuch_temp");
+        options.setBigQueryProject(bigQueryContainer.getProjectId());
+        options.setTempLocation("gs://test-project/test-bucket");
+        options.setCredentialFactoryClass(NoopCredentialFactory.class);
         BMUnitHelperWithStaticStringProperty.setStaticStringProperty(bigQueryContainer.getEmulatorHttpEndpoint());
         Pipeline p = Pipeline.create(options);
 
