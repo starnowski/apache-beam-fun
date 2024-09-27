@@ -48,7 +48,8 @@ public class CountTest {
     private static Network sharedNetwork = Network.newNetwork();
     private static GenericContainer<?> csContainer = new GenericContainer<>("fsouza/fake-gcs-server")
             .withNetwork(sharedNetwork)
-//            .withEnv("GCS_BUCKETS", "test-bucket")
+            .withEnv("GCS_BUCKETS", "test-bucket")
+            .withNetworkAliases("fakegcs")
             .withExposedPorts(4443);
     private static BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3")
             .withNetwork(sharedNetwork);
@@ -60,7 +61,8 @@ public class CountTest {
         csContainer.start();
         System.out.println("host: " + csContainer.getHost() + ":" + csContainer.getMappedPort(4443));
         bigQueryContainer
-                .withEnv("STORAGE_EMULATOR_HOST", csContainer.getHost() + ":" + csContainer.getMappedPort(4443))
+//                .withEnv("STORAGE_EMULATOR_HOST", csContainer.getHost() + ":" + csContainer.getMappedPort(4443))
+                .withEnv("STORAGE_EMULATOR_HOST", "fakegcs:4443")
                 .start();
 //        clearDataSet();
         bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
