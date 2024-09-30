@@ -1,0 +1,17 @@
+<configuration>
+    <!-- Console appender to output to stdout -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Set the log level for Testcontainers -->
+    <logger name="org.testcontainers" level="DEBUG"/>
+<!--    <logger name="com.github.starnowski.apache.beam.fun.CountTest" level="INFO"/>-->
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

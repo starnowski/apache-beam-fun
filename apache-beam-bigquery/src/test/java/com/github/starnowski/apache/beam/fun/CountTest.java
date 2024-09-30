@@ -1,70 +1,85 @@
 package com.github.starnowski.apache.beam.fun;
 
-import com.google.api.services.bigquery.model.TableDataInsertAllRequest;
 import com.google.api.services.bigquery.model.TableFieldSchema;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
 import com.google.cloud.NoCredentials;
 import com.google.cloud.bigquery.*;
-import com.google.cloud.firestore.FirestoreOptions;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.extensions.gcp.auth.NoopCredentialFactory;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions;
 import org.apache.beam.sdk.options.*;
-import org.apache.beam.sdk.transforms.*;
+import org.apache.beam.sdk.transforms.Count;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.jboss.byteman.contrib.bmunit.BMRule;
 import org.jboss.byteman.contrib.bmunit.BMRules;
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.jboss.byteman.contrib.bmunit.WithByteman;
-//import org.junit.After;
-//import org.junit.Before;
-//import org.junit.Test;
-import org.junit.Before;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.BigQueryEmulatorContainer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @WithByteman
 public class CountTest {
 
     // Our static input data, which will make up the initial PCollection.
-    static final String[] WORDS_ARRAY = new String[] {
+    static final String[] WORDS_ARRAY = new String[]{
             "hi", "there", "hi", "hi", "sue", "bob",
             "hi", "sue", "", "", "ZOW", "bob", ""};
-
     static final List<String> WORDS = Arrays.asList(WORDS_ARRAY);
-
-    private static Network sharedNetwork = Network.newNetwork();
-    private static GenericContainer<?> csContainer = new GenericContainer<>("fsouza/fake-gcs-server")
+    private static final Logger LOGGER = LoggerFactory.getLogger(CountTest.class);
+    private static final String WEATHER_SAMPLES_TABLE =
+            "test-project.samples.weather_stations";
+    private static final String WEATHER_SAMPLES_SUMMARY_TABLE =
+            "test-project.samples.weather_summary";
+    static BigQuery bigQuery;
+    private static final Network sharedNetwork = Network.newNetwork();
+    private static final GenericContainer<?> csContainer = new GenericContainer<>("fsouza/fake-gcs-server")
             .withNetwork(sharedNetwork)
             .withEnv("GCS_BUCKETS", "test-bucket")
             .withNetworkAliases("fakegcs")
+            .withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint(
+                    "/bin/fake-gcs-server",
+                    "-log-level", "debug"
+//                    "-scheme", "http"
+            ))
             .withExposedPorts(4443);
-    private static BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3")
+    private static final BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3")
+            .withCommand(new String[]{"--project", "test-project", "--log-level", "debug"})
             .withNetwork(sharedNetwork);
-
-    static BigQuery bigQuery;
 
     @BeforeAll
     public static void setupDataLake() {
+//        Slf4jLogConsumer logConsumer = new Slf4jLogConsumer(LOGGER);
+//        csContainer.setLogConsumers(Arrays.asList(logConsumer));
+        csContainer.setLogConsumers(Arrays.asList(outputFrame -> System.out.println("[Cloud storage]" + outputFrame.getUtf8String())));
+//        bigQueryContainer.setLogConsumers(Arrays.asList(logConsumer));
+//        bigQueryContainer.withLogConsumer(outputFrame -> System.out.println(outputFrame.getUtf8String()));
+        bigQueryContainer.setLogConsumers(Arrays.asList(outputFrame -> System.out.println("[BigQuery]" + outputFrame.getUtf8String())));
         csContainer.start();
         System.out.println("host: " + csContainer.getHost() + ":" + csContainer.getMappedPort(4443));
         bigQueryContainer
-//                .withEnv("STORAGE_EMULATOR_HOST", csContainer.getHost() + ":" + csContainer.getMappedPort(4443))
-                .withEnv("STORAGE_EMULATOR_HOST", "fakegcs:4443")
+//                .withEnv("STORAGE_EMULATOR_HOST", "fakegcs:4443")
+                .withEnv("STORAGE_EMULATOR_HOST", "fakegcs:" + csContainer.getMappedPort(4443))
                 .start();
-//        clearDataSet();
         bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
                 .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
                 .setCredentials(NoCredentials.getInstance())
@@ -86,6 +101,9 @@ public class CountTest {
     @AfterAll
     public static void tearDown() {
         bigQueryContainer.stop();
+        System.out.println("BigQuery logs: " + bigQueryContainer.getLogs());
+        csContainer.stop();
+        System.out.println("Cloud storage logs: " + csContainer.getLogs());
     }
 
     public static void createDataSet() {
@@ -113,7 +131,7 @@ public class CountTest {
         bigQuery.create(tableInfo);
     }
 
-
+    @Timeout(unit = TimeUnit.MINUTES, value = 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     @Test
     @BMUnitConfig(verbose = true, bmunitVerbose = true)
     @BMRules(rules = {
@@ -158,55 +176,42 @@ public class CountTest {
         p.run().waitUntilFinish();
     }
 
-    private static final String WEATHER_SAMPLES_TABLE =
-            "test-project.samples.weather_stations";
-    private static final String WEATHER_SAMPLES_SUMMARY_TABLE =
-            "test-project.samples.weather_summary";
+    private void applyBigQueryTornadoes(Pipeline p, Options options) {
+        // Build the table schema for the output table.
+        List<TableFieldSchema> fields = new ArrayList<>();
+        fields.add(new TableFieldSchema().setName("month").setType("INTEGER"));
+        fields.add(new TableFieldSchema().setName("tornado_count").setType("INTEGER"));
+        TableSchema schema = new TableSchema().setFields(fields);
 
-    /**
-     * Examines each row in the input table. If a tornado was recorded in that sample, the month in
-     * which it occurred is output.
-     */
-    static class ExtractTornadoesFn extends DoFn<TableRow, Integer> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            TableRow row = c.element();
-            if ((Boolean) row.get("tornado")) {
-                c.output(Integer.parseInt((String) row.get("month")));
+        BigQueryIO.TypedRead<TableRow> bigqueryIO;
+        if (!options.getInputQuery().isEmpty()) {
+            bigqueryIO =
+                    BigQueryIO.readTableRows()
+                            .fromQuery(options.getInputQuery())
+                            .usingStandardSql()
+                            .withMethod(options.getReadMethod());
+        } else {
+            bigqueryIO =
+                    BigQueryIO.readTableRows().from(options.getInput()).withMethod(options.getReadMethod());
+
+            // Selected fields only applies when using Method.DIRECT_READ and
+            // when reading directly from a table.
+            if (options.getReadMethod() == BigQueryIO.TypedRead.Method.DIRECT_READ) {
+                bigqueryIO = bigqueryIO.withSelectedFields(Arrays.asList("month", "tornado"));
             }
         }
-    }
 
-    /**
-     * Prepares the data for writing to BigQuery by building a TableRow object containing an integer
-     * representation of month and the number of tornadoes that occurred in each month.
-     */
-    static class FormatCountsFn extends DoFn<KV<Integer, Long>, TableRow> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            TableRow row =
-                    new TableRow()
-                            .set("month", c.element().getKey())
-                            .set("tornado_count", c.element().getValue());
-            c.output(row);
-        }
-    }
+        PCollection<TableRow> rowsFromBigQuery = p.apply(bigqueryIO);
 
-    static class CountTornadoes extends PTransform<PCollection<TableRow>, PCollection<TableRow>> {
-        @Override
-        public PCollection<TableRow> expand(PCollection<TableRow> rows) {
-
-            // row... => month...
-            PCollection<Integer> tornadoes = rows.apply(ParDo.of(new ExtractTornadoesFn()));
-
-            // month... => <month,count>...
-            PCollection<KV<Integer, Long>> tornadoCounts = tornadoes.apply(Count.perElement());
-
-            // <month,count>... => row...
-            PCollection<TableRow> results = tornadoCounts.apply(ParDo.of(new FormatCountsFn()));
-
-            return results;
-        }
+        rowsFromBigQuery
+                .apply(new CountTornadoes())
+                .apply(
+                        BigQueryIO.writeTableRows()
+                                .to(options.getOutput())
+                                .withSchema(schema)
+                                .withCreateDisposition(options.getCreateDisposition())
+                                .withWriteDisposition(options.getWriteDisposition())
+                                .withMethod(options.getWriteMethod()));
     }
 
     public interface Options extends PipelineOptions {
@@ -256,42 +261,50 @@ public class CountTest {
         void setOutput(String value);
     }
 
-    private void applyBigQueryTornadoes(Pipeline p, Options options) {
-        // Build the table schema for the output table.
-        List<TableFieldSchema> fields = new ArrayList<>();
-        fields.add(new TableFieldSchema().setName("month").setType("INTEGER"));
-        fields.add(new TableFieldSchema().setName("tornado_count").setType("INTEGER"));
-        TableSchema schema = new TableSchema().setFields(fields);
-
-        BigQueryIO.TypedRead<TableRow> bigqueryIO;
-        if (!options.getInputQuery().isEmpty()) {
-            bigqueryIO =
-                    BigQueryIO.readTableRows()
-                            .fromQuery(options.getInputQuery())
-                            .usingStandardSql()
-                            .withMethod(options.getReadMethod());
-        } else {
-            bigqueryIO =
-                    BigQueryIO.readTableRows().from(options.getInput()).withMethod(options.getReadMethod());
-
-            // Selected fields only applies when using Method.DIRECT_READ and
-            // when reading directly from a table.
-            if (options.getReadMethod() == BigQueryIO.TypedRead.Method.DIRECT_READ) {
-                bigqueryIO = bigqueryIO.withSelectedFields(Arrays.asList("month", "tornado"));
+    /**
+     * Examines each row in the input table. If a tornado was recorded in that sample, the month in
+     * which it occurred is output.
+     */
+    static class ExtractTornadoesFn extends DoFn<TableRow, Integer> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            TableRow row = c.element();
+            if ((Boolean) row.get("tornado")) {
+                c.output(Integer.parseInt((String) row.get("month")));
             }
         }
+    }
 
-        PCollection<TableRow> rowsFromBigQuery = p.apply(bigqueryIO);
+    /**
+     * Prepares the data for writing to BigQuery by building a TableRow object containing an integer
+     * representation of month and the number of tornadoes that occurred in each month.
+     */
+    static class FormatCountsFn extends DoFn<KV<Integer, Long>, TableRow> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            TableRow row =
+                    new TableRow()
+                            .set("month", c.element().getKey())
+                            .set("tornado_count", c.element().getValue());
+            c.output(row);
+        }
+    }
 
-        rowsFromBigQuery
-                .apply(new CountTornadoes())
-                .apply(
-                        BigQueryIO.writeTableRows()
-                                .to(options.getOutput())
-                                .withSchema(schema)
-                                .withCreateDisposition(options.getCreateDisposition())
-                                .withWriteDisposition(options.getWriteDisposition())
-                                .withMethod(options.getWriteMethod()));
+    static class CountTornadoes extends PTransform<PCollection<TableRow>, PCollection<TableRow>> {
+        @Override
+        public PCollection<TableRow> expand(PCollection<TableRow> rows) {
+
+            // row... => month...
+            PCollection<Integer> tornadoes = rows.apply(ParDo.of(new ExtractTornadoesFn()));
+
+            // month... => <month,count>...
+            PCollection<KV<Integer, Long>> tornadoCounts = tornadoes.apply(Count.perElement());
+
+            // <month,count>... => row...
+            PCollection<TableRow> results = tornadoCounts.apply(ParDo.of(new FormatCountsFn()));
+
+            return results;
+        }
     }
 
 }
