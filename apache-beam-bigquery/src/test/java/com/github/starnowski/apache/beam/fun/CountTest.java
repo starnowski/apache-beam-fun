@@ -27,10 +27,12 @@ import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.BigQueryEmulatorContainer;
+import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -58,16 +60,19 @@ public class CountTest {
             .withNetworkAliases("fakegcs")
             .withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint(
                     "/bin/fake-gcs-server",
-                    "-log-level", "debug"
+                    "-log-level", "debug",
+                    "-external-url", "fakegcs:4443"
 //                    "-scheme", "http"
             ))
             .withExposedPorts(4443);
     private static final BigQueryEmulatorContainer bigQueryContainer = new BigQueryEmulatorContainer("ghcr.io/goccy/bigquery-emulator:0.4.3")
-            .withCommand(new String[]{"--project", "test-project", "--log-level", "debug"})
+            .withCommand(new String[]{"--project", "test-project",
+                    "--log-level", "debug",
+                    "--dataset", "samples"})
             .withNetwork(sharedNetwork);
 
     @BeforeAll
-    public static void setupDataLake() {
+    public static void setupDataLake() throws IOException, InterruptedException {
 //        Slf4jLogConsumer logConsumer = new Slf4jLogConsumer(LOGGER);
 //        csContainer.setLogConsumers(Arrays.asList(logConsumer));
         csContainer.setLogConsumers(Arrays.asList(outputFrame -> System.out.println("[Cloud storage]" + outputFrame.getUtf8String())));
@@ -85,15 +90,30 @@ public class CountTest {
                 .setCredentials(NoCredentials.getInstance())
                 .setProjectId(bigQueryContainer.getProjectId())
                 .build().getService();
-        createDataSet();
+//        createDataSet();
         createTable();
         createTableRecords();
+
+        //Test DNS
+//        Container.ExecResult commandResult = bigQueryContainer.execInContainer("nslookup fakegcs");
+//        Container.ExecResult commandResult = bigQueryContainer.execInContainer("dig fakegcs");
+        //apt-get update && apt-get install -y passw
+//        executeCommandOnBiqQueryContainer("apt-get update && apt-get install -y passwd");
+//        executeCommandOnBiqQueryContainer("yum install -y glibc-common");
+//        executeCommandOnBiqQueryContainer("getent fakegcs");
+    }
+
+    private static void executeCommandOnBiqQueryContainer(String command) throws IOException, InterruptedException {
+        Container.ExecResult commandResult = bigQueryContainer.execInContainer(command);
+        System.out.println("Command stdout: " + commandResult.getStdout());
+        System.out.println("Command stderr: " + commandResult.getStderr());
+        System.out.println("Exit code: " + commandResult.getExitCode());
     }
 
     private static void createTableRecords() {
         var tableId = TableId.of("samples", "weather_stations");
         InsertAllRequest insertAllRequest = InsertAllRequest.newBuilder(tableId)
-                .addRow(InsertAllRequest.RowToInsert.of("x", Map.of("column_01", "Val1", "column_02", "val2"))).build();
+                .addRow(InsertAllRequest.RowToInsert.of("x", Map.of("month", 2, "tornado_count", 15))).build();
 
         bigQuery.insertAll(insertAllRequest);
     }
@@ -118,8 +138,8 @@ public class CountTest {
 
     public static void createTable() {
         Schema schema = Schema.of(
-                Field.of("column_01", StandardSQLTypeName.STRING),
-                Field.of("column_02", StandardSQLTypeName.STRING));
+                Field.of("month", StandardSQLTypeName.INT64),
+                Field.of("tornado_count", StandardSQLTypeName.INT64));
         var tableId = TableId.of("samples", "weather_stations");
         var tableDefinition = StandardTableDefinition.newBuilder().setSchema(schema)
 //                .setNumBytes(Long.valueOf(0L))
