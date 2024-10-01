@@ -38,6 +38,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @WithByteman
 public class CountTest {
@@ -57,11 +58,12 @@ public class CountTest {
     private static final GenericContainer<?> csContainer = new GenericContainer<>("fsouza/fake-gcs-server")
             .withNetwork(sharedNetwork)
             .withEnv("GCS_BUCKETS", "test-bucket")
-            .withNetworkAliases("fakegcs")
+            .withNetworkAliases("fakegcs.com")
             .withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint(
                     "/bin/fake-gcs-server",
                     "-log-level", "debug",
-                    "-external-url", "fakegcs:4443"
+//                    "-external-url", "fakegcs:4443",
+                    "-scheme", "http"
 //                    "-scheme", "http"
             ))
             .withExposedPorts(4443);
@@ -83,8 +85,20 @@ public class CountTest {
         System.out.println("host: " + csContainer.getHost() + ":" + csContainer.getMappedPort(4443));
         bigQueryContainer
 //                .withEnv("STORAGE_EMULATOR_HOST", "fakegcs:4443")
-                .withEnv("STORAGE_EMULATOR_HOST", "fakegcs:" + csContainer.getMappedPort(4443))
+//                .withEnv("STORAGE_EMULATOR_HOST", "https://fakegcs:" + csContainer.getMappedPort(4443))
+//                .withEnv("STORAGE_EMULATOR_HOST", "https://fakegcs:4443")
+//                .withEnv("STORAGE_EMULATOR_HOST", "http://fakegcs:4443")
+                .withEnv("STORAGE_EMULATOR_HOST", "http://fakegcs.com:4443")
+//                .withEnv("STORAGE_EMULATOR_HOST", "https://0.0.0.0:4443")
+//                    .withEnv("STORAGE_EMULATOR_HOST", "http://fakegcs:" + csContainer.getMappedPort(4443))
+//                    .withEnv("STORAGE_EMULATOR_HOST", "http://fakegcs:" + csContainer.getMappedPort(4443))
+//                .withEnv("STORAGE_EMULATOR_HOST", "https://127.0.0.1:4443")
+//                .withEnv("STORAGE_EMULATOR_HOST", "https://172.17.0.2:4443")
+//                .withEnv("STORAGE_EMULATOR_HOST", "https://127.0.0.1:" + csContainer.getMappedPort(4443))
                 .start();
+
+        System.out.println("bigquery host: " + bigQueryContainer.getHost() + " ports: " + bigQueryContainer.getExposedPorts().stream().map(p -> p + "_" + bigQueryContainer.getMappedPort(p)).collect(Collectors.joining(",")));
+
         bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
                 .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
                 .setCredentials(NoCredentials.getInstance())
