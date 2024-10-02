@@ -231,7 +231,7 @@ public class CountTest {
             // Selected fields only applies when using Method.DIRECT_READ and
             // when reading directly from a table.
             if (options.getReadMethod() == BigQueryIO.TypedRead.Method.DIRECT_READ) {
-                bigqueryIO = bigqueryIO.withSelectedFields(Arrays.asList("month", "tornado"));
+                bigqueryIO = bigqueryIO.withSelectedFields(Arrays.asList("month", "tornado_count"));
             }
         }
 

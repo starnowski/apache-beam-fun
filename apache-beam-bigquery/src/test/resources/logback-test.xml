@@ -8,6 +8,10 @@
 
     <!-- Set the log level for Testcontainers -->
     <logger name="org.testcontainers" level="DEBUG"/>
+<!--    <logger name="org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO" level="DEBUG">-->
+    <logger name="org.apache.beam.sdk.io.gcp.bigquery" level="DEBUG">
+        <appender-ref ref="STDOUT"/>
+    </logger>
 <!--    <logger name="com.github.starnowski.apache.beam.fun.CountTest" level="INFO"/>-->
 
     <!-- Root logger configuration -->

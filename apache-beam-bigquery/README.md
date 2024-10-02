@@ -22,3 +22,5 @@ gcloud beta emulators bigquery start --project
 
 docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 7910e54b6a28
 
+https://github.com/goccy/bigquery-emulator/issues/107
+
