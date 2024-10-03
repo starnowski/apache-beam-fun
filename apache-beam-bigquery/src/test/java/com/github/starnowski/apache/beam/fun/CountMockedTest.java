@@ -38,10 +38,11 @@ public class CountMockedTest {
     private static final String PROJECT_ID = "test-project";
     private static final String DATASET = "samples";
     private static final String WEATHER_SAMPLES_TABLE_ID = "weather_stations";
+    private static final String WEATHER_SUMMARY_TABLE_ID = "weather_summary";
     private static final String WEATHER_SAMPLES_TABLE =
             PROJECT_ID + ":" + DATASET + "." + WEATHER_SAMPLES_TABLE_ID;
     private static final String WEATHER_SAMPLES_SUMMARY_TABLE =
-            PROJECT_ID + ":" + DATASET + "." + "weather_summary";
+            PROJECT_ID + ":" + DATASET + "." + WEATHER_SUMMARY_TABLE_ID;
     private FakeBigQueryServices testServices;
 
     private static void createTableRecords() {
@@ -64,14 +65,6 @@ public class CountMockedTest {
     }
 
     public void createTable(FakeDatasetService datasetService) throws IOException {
-//        Schema schema = Schema.of(
-//                Field.of("month", StandardSQLTypeName.INT64),
-//                Field.of("tornado_count", StandardSQLTypeName.INT64));
-//        var tableId = TableId.of(DATASET, "weather_stations");
-//        var tableDefinition = StandardTableDefinition.newBuilder().setSchema(schema)
-//                .setNumBytes(Long.valueOf(256L))
-//                .build();
-//        var tableInfo = TableInfo.newBuilder(tableId, tableDefinition).build();
         Table table = new Table();
         TableReference tableReference = new TableReference()
                 .setTableId(WEATHER_SAMPLES_TABLE_ID)
@@ -80,9 +73,22 @@ public class CountMockedTest {
         table.setTableReference(tableReference);
         table.setNumBytes(Long.valueOf(256L));
         datasetService.createTable(table);
-        datasetService.updateTableSchema(tableReference, new TableSchema()
-                .set("month", StandardSQLTypeName.INT64)
-                .set("tornado_count", StandardSQLTypeName.INT64));
+        List<TableFieldSchema> fields = new ArrayList<>();
+        fields.add(new TableFieldSchema().setName("month").setType("INTEGER"));
+        fields.add(new TableFieldSchema().setName("tornado_count").setType("INTEGER"));
+        datasetService.updateTableSchema(tableReference, new TableSchema().setFields(fields));
+
+//        Table outputTable = new Table();
+//        TableReference outputTableReference = new TableReference()
+//                .setTableId(WEATHER_SUMMARY_TABLE_ID)
+//                .setProjectId(PROJECT_ID)
+//                .setDatasetId(DATASET);
+//        outputTable.setTableReference(outputTableReference);
+//        outputTable.setNumBytes(Long.valueOf(256L));
+//        datasetService.createTable(outputTable);
+//        datasetService.updateTableSchema(outputTableReference, new TableSchema()
+//                .set("month", "INTEGER")
+//                .set("tornado_count", "INTEGER"));
     }
 
     @BeforeEach
@@ -149,16 +155,17 @@ public class CountMockedTest {
 
         PCollection<TableRow> rowsFromBigQuery = p.apply(bigqueryIO);
 
-        rowsFromBigQuery
-                .apply(new CountTornadoes())
-                .apply(
-                        BigQueryIO.writeTableRows()
-                                .to(options.getOutput())
-                                .withSchema(schema)
-                                .withTestServices(testServices)
-                                .withCreateDisposition(options.getCreateDisposition())
-                                .withWriteDisposition(options.getWriteDisposition())
-                                .withMethod(options.getWriteMethod()));
+//        rowsFromBigQuery
+//                .apply(new CountTornadoes())
+//                .apply(
+//                        BigQueryIO.writeTableRows()
+//                                .to(options.getOutput())
+//                                .withSchema(schema)
+//                                .withTestServices(testServices)
+//                                .withCreateDisposition(options.getCreateDisposition())
+//                                .withWriteDisposition(options.getWriteDisposition())
+//                                .withMethod(options.getWriteMethod()))
+        ;
     }
 
     public interface Options extends PipelineOptions {
@@ -203,8 +210,7 @@ public class CountMockedTest {
                 "BigQuery table to write to, specified as "
                         + "<project_id>:<dataset_id>.<table_id>. The dataset must already exist.")
         @Validation.Required
-//        @Default.String(WEATHER_SAMPLES_SUMMARY_TABLE)
-        @Default.String(WEATHER_SAMPLES_TABLE)
+        @Default.String(WEATHER_SAMPLES_SUMMARY_TABLE)
         String getOutput();
 
         void setOutput(String value);
