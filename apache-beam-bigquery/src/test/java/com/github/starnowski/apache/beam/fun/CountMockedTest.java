@@ -10,6 +10,7 @@ import org.apache.beam.sdk.io.gcp.testing.FakeBigQueryServices;
 import org.apache.beam.sdk.io.gcp.testing.FakeDatasetService;
 import org.apache.beam.sdk.io.gcp.testing.FakeJobService;
 import org.apache.beam.sdk.options.*;
+import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Count;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -53,17 +54,6 @@ public class CountMockedTest {
 //        bigQuery.insertAll(insertAllRequest);
     }
 
-
-    public static void createDataSet() {
-//        BigQuery bigQuery = com.google.cloud.bigquery.BigQueryOptions.newBuilder()
-//                .setHost(bigQueryContainer.getEmulatorHttpEndpoint())
-//                .setCredentials(NoCredentials.getInstance())
-//                .setProjectId(bigQueryContainer.getProjectId())
-//                .build().getService();
-//        var datasetInfo = DatasetInfo.newBuilder("samples").build();
-//        bigQuery.create(datasetInfo);
-    }
-
     public void createTable(FakeDatasetService datasetService) throws IOException {
         Table table = new Table();
         TableReference tableReference = new TableReference()
@@ -78,17 +68,18 @@ public class CountMockedTest {
         fields.add(new TableFieldSchema().setName("tornado_count").setType("INTEGER"));
         datasetService.updateTableSchema(tableReference, new TableSchema().setFields(fields));
 
-//        Table outputTable = new Table();
-//        TableReference outputTableReference = new TableReference()
-//                .setTableId(WEATHER_SUMMARY_TABLE_ID)
-//                .setProjectId(PROJECT_ID)
-//                .setDatasetId(DATASET);
-//        outputTable.setTableReference(outputTableReference);
-//        outputTable.setNumBytes(Long.valueOf(256L));
-//        datasetService.createTable(outputTable);
-//        datasetService.updateTableSchema(outputTableReference, new TableSchema()
-//                .set("month", "INTEGER")
-//                .set("tornado_count", "INTEGER"));
+        Table outputTable = new Table();
+        TableReference outputTableReference = new TableReference()
+                .setTableId(WEATHER_SUMMARY_TABLE_ID)
+                .setProjectId(PROJECT_ID)
+                .setDatasetId(DATASET);
+        outputTable.setTableReference(outputTableReference);
+        outputTable.setNumBytes(Long.valueOf(256L));
+        datasetService.createTable(outputTable);
+        fields = new ArrayList<>();
+        fields.add(new TableFieldSchema().setName("month").setType("INTEGER"));
+        fields.add(new TableFieldSchema().setName("tornado_count").setType("INTEGER"));
+        datasetService.updateTableSchema(outputTableReference, new TableSchema().setFields(fields));
     }
 
     @BeforeEach
@@ -155,8 +146,8 @@ public class CountMockedTest {
 
         PCollection<TableRow> rowsFromBigQuery = p.apply(bigqueryIO);
 
-//        rowsFromBigQuery
-//                .apply(new CountTornadoes())
+        rowsFromBigQuery
+                .apply(new CountTornadoes())
 //                .apply(
 //                        BigQueryIO.writeTableRows()
 //                                .to(options.getOutput())
