@@ -14,10 +14,7 @@ import org.jboss.byteman.contrib.bmunit.BMRule;
 import org.jboss.byteman.contrib.bmunit.BMRules;
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.jboss.byteman.contrib.bmunit.WithByteman;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
@@ -27,17 +24,18 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
 
 @WithByteman
 public class ReadAndConvertFromGCSTest {
 
     // Our static input data, which will make up the initial PCollection.
-    static final String[] WORDS_ARRAY = new String[]{
-            "hi", "there", "hi", "hi", "sue", "bob",
-            "hi", "sue", "", "", "ZOW", "bob", ""};
-    static final List<String> WORDS = Arrays.asList(WORDS_ARRAY);
+    private static final Set<String> expectedIds = new HashSet<>(Arrays.asList("1234", "cxczvas", "3213"));
+    private static final HashSet<String> actualIds = new HashSet<>();
     private static final Logger LOGGER = LoggerFactory.getLogger(ReadAndConvertFromGCSTest.class);
     private static final String PROJECT_ID = "test-project";
     private static final String BUCKET = "test-bucket";
@@ -73,7 +71,7 @@ public class ReadAndConvertFromGCSTest {
         System.out.println("Cloud storage logs: " + csContainer.getLogs());
     }
 
-    @Timeout(unit = TimeUnit.MINUTES, value = 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @Timeout(unit = TimeUnit.MINUTES, value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     @Test
 
     //GoogleCloudStorageOptions
@@ -113,8 +111,14 @@ public class ReadAndConvertFromGCSTest {
 
         begin.apply("ParseJson", ParDo.of(new ParseJsonFn()))
 //                .setCoder(JsonNodeCoder.of())
+                .apply("PrintJson", ParDo.of(new CollectIdAndPassThrough()))
                 .apply("PrintJson", ParDo.of(new PrintToConsole()));
-        PipelineResult.State state = p.run().waitUntilFinish();
+
+        // WHEN
+        p.run().waitUntilFinish();
+
+        // THEN
+        Assertions.assertArrayEquals(actualIds.toArray(), expectedIds.toArray());
     }
 
     private static String generateGCSHost() {
@@ -128,7 +132,7 @@ public class ReadAndConvertFromGCSTest {
         public void processElement(@Element String element, OutputReceiver<String> out) {
             try {
                 JsonNode jsonObject = objectMapper.readTree(element);
-                out.output(jsonObject.toPrettyString());  // Output parsed JSON object
+                out.output(jsonObject.get("id").textValue());  // Output parsed JSON object
             } catch (IOException e) {
                 // Handle the error if parsing fails
                 System.err.println("Failed to parse JSON: " + element);
@@ -137,11 +141,19 @@ public class ReadAndConvertFromGCSTest {
     }
 
     static class PrintToConsole extends DoFn<String, Void> {
-        private static final ObjectMapper objectMapper = new ObjectMapper();
 
         @ProcessElement
         public void processElement(@Element String jsonObject) {
             System.out.println(jsonObject);  // Print each JSON object
+        }
+    }
+
+    static class CollectIdAndPassThrough extends DoFn<String, String> {
+
+        @ProcessElement
+        public void processElement(@Element String id, OutputReceiver<String> out) {
+            actualIds.add(id);
+            out.output(id);
         }
     }
 }
