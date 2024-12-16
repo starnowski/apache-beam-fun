@@ -184,6 +184,9 @@ public class ReadAndConvertUFT16FileTest {
                 // Create a ByteArrayInputStream from the byte array
                 detectedCharset = encodingDetector.detect(bufferedInputStream, new Metadata());
                 System.out.println("detectedCharset="+detectedCharset.displayName());
+                if (detectedCharset == StandardCharsets.UTF_16BE || detectedCharset == StandardCharsets.UTF_16LE) {
+                    detectedCharset = StandardCharsets.UTF_16;
+                }
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
