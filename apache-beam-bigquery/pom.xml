@@ -38,6 +38,11 @@
             <artifactId>logback-classic</artifactId>
             <version>1.5.8</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers</artifactId>
+            <version>1.17</version>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.beam</groupId>

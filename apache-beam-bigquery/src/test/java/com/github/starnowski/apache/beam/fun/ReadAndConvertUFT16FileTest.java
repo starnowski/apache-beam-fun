@@ -11,11 +11,17 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.tika.Tika;
+import org.apache.tika.detect.EncodingDetector;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.txt.UniversalEncodingDetector;
 import org.jboss.byteman.contrib.bmunit.BMRule;
 import org.jboss.byteman.contrib.bmunit.BMRules;
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.jboss.byteman.contrib.bmunit.WithByteman;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
@@ -24,6 +30,7 @@ import java.io.*;
 import java.net.URISyntaxException;
 import java.nio.channels.Channel;
 import java.nio.channels.Channels;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -93,6 +100,34 @@ public class ReadAndConvertUFT16FileTest {
         Assertions.assertEquals(expectedIds, actualIds);
     }
 
+    @Timeout(unit = TimeUnit.MINUTES, value = 10)
+    @ParameterizedTest
+    @ValueSource(strings = {"json-data-utf-16.json", "json-data.json"})
+    public void testReadFilesWithDifferentEncoding(String inputFileName) throws URISyntaxException, IOException {
+        // Upload file
+        // Create a test pipeline.
+        Pipeline p = Pipeline.create();
+
+
+        PCollection<String> begin = p
+//                .apply(TextIO.read().from( this.getClass().getResource("json-data-utf-16.json").toURI().toString()));
+                .apply("Find files", FileIO.match().filepattern(this.getClass().getResource(inputFileName).toURI().toString()))
+                .apply("Read file", FileIO.readMatches())
+                .apply("Convert files to utf-8", ParDo.of(new SmartFileConverter()))
+                .apply(new ByteArrayToLines())
+                ;
+        begin.apply("ParseJson", ParDo.of(new ParseJsonFn()))
+//                .setCoder(JsonNodeCoder.of())
+                .apply("PrintJson", ParDo.of(new CollectIdAndPassThrough()))
+                .apply("PrintJson", ParDo.of(new PrintToConsole()));
+
+        // WHEN
+        p.run().waitUntilFinish();
+
+        // THEN
+        Assertions.assertEquals(expectedIds, actualIds);
+    }
+
     static class ByteArrayToLines extends PTransform<PCollection<byte[]>, PCollection<String>> {
 
         @Override
@@ -120,6 +155,41 @@ public class ReadAndConvertUFT16FileTest {
         public void processElement(@Element FileIO.ReadableFile element, OutputReceiver<byte[]> out) {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(Channels.newInputStream(element.openSeekable()), StandardCharsets.UTF_16));
+                 ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                 BufferedWriter writer = new BufferedWriter(
+                         new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8))) {
+
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    writer.write(line);
+                    writer.newLine();
+                }
+                writer.flush();
+                out.output(byteArrayOutputStream.toByteArray());
+                System.out.println("File conversion completed successfully.");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    static class SmartFileConverter extends DoFn<FileIO.ReadableFile, byte[]> {
+
+        @ProcessElement
+        public void processElement(@Element FileIO.ReadableFile element, OutputReceiver<byte[]> out) {
+            Charset detectedCharset = null;
+            try (InputStream stream = Channels.newInputStream(element.openSeekable());
+                 BufferedInputStream bufferedInputStream = new BufferedInputStream(stream)) {
+                EncodingDetector encodingDetector = new UniversalEncodingDetector();
+                // Create a ByteArrayInputStream from the byte array
+                detectedCharset = encodingDetector.detect(bufferedInputStream, new Metadata());
+                System.out.println("detectedCharset="+detectedCharset.displayName());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(Channels.newInputStream(element.openSeekable()), detectedCharset == null ? StandardCharsets.UTF_8 : StandardCharsets.UTF_16));
                  ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                  BufferedWriter writer = new BufferedWriter(
                          new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8))) {
