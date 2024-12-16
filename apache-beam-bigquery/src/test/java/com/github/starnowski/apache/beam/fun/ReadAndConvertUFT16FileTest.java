@@ -129,6 +129,7 @@ public class ReadAndConvertUFT16FileTest {
                     writer.write(line);
                     writer.newLine();
                 }
+                writer.flush();
                 out.output(byteArrayOutputStream.toByteArray());
                 System.out.println("File conversion completed successfully.");
             } catch (IOException e) {
