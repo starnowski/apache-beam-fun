@@ -189,7 +189,7 @@ public class ReadAndConvertUFT16FileTest {
             }
 
             try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(Channels.newInputStream(element.openSeekable()), detectedCharset == null ? StandardCharsets.UTF_8 : StandardCharsets.UTF_16));
+                    new InputStreamReader(Channels.newInputStream(element.openSeekable()), detectedCharset == null ? StandardCharsets.UTF_8 : detectedCharset));
                  ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                  BufferedWriter writer = new BufferedWriter(
                          new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8))) {
