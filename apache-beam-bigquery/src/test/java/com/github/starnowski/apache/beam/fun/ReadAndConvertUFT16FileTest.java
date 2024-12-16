@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.NoCredentials;
 import com.google.cloud.storage.*;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
 import org.jboss.byteman.contrib.bmunit.BMRule;
@@ -18,8 +20,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 
-import java.io.IOException;
+import java.io.*;
 import java.net.URISyntaxException;
+import java.nio.channels.Channel;
+import java.nio.channels.Channels;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -40,7 +45,7 @@ public class ReadAndConvertUFT16FileTest {
     }
 
 
-    @Timeout(unit = TimeUnit.MINUTES, value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @Timeout(unit = TimeUnit.MINUTES, value = 10)
     @Test
     public void testReadFromFile() throws URISyntaxException, IOException {
         // Upload file
@@ -58,7 +63,78 @@ public class ReadAndConvertUFT16FileTest {
         p.run().waitUntilFinish();
 
         // THEN
-        Assertions.assertArrayEquals(actualIds.toArray(), expectedIds.toArray());
+        Assertions.assertEquals(expectedIds, actualIds);
+    }
+
+    @Timeout(unit = TimeUnit.MINUTES, value = 10)
+    @Test
+    public void testReadFromUTF16EncodedFile() throws URISyntaxException, IOException {
+        // Upload file
+        // Create a test pipeline.
+        Pipeline p = Pipeline.create();
+
+
+        PCollection<String> begin = p
+//                .apply(TextIO.read().from( this.getClass().getResource("json-data-utf-16.json").toURI().toString()));
+                .apply("Find files", FileIO.match().filepattern(this.getClass().getResource("json-data-utf-16.json").toURI().toString()))
+                .apply("Read file", FileIO.readMatches())
+                .apply("Convert files to utf-8", ParDo.of(new ConvertFromUtf16ToUtf8()))
+                .apply(new ByteArrayToLines())
+                ;
+        begin.apply("ParseJson", ParDo.of(new ParseJsonFn()))
+//                .setCoder(JsonNodeCoder.of())
+                .apply("PrintJson", ParDo.of(new CollectIdAndPassThrough()))
+                .apply("PrintJson", ParDo.of(new PrintToConsole()));
+
+        // WHEN
+        p.run().waitUntilFinish();
+
+        // THEN
+        Assertions.assertEquals(expectedIds, actualIds);
+    }
+
+    static class ByteArrayToLines extends PTransform<PCollection<byte[]>, PCollection<String>> {
+
+        @Override
+        public PCollection<String> expand(PCollection<byte[]> input) {
+            return input.apply("Split ByteArray to Lines", ParDo.of(new DoFn<byte[], String>() {
+                @ProcessElement
+                public void processElement(@Element byte[] element, OutputReceiver<String> receiver) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(new ByteArrayInputStream(element), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            receiver.output(line);
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to parse byte array to lines", e);
+                    }
+                }
+            }));
+        }
+    }
+
+    static class ConvertFromUtf16ToUtf8 extends DoFn<FileIO.ReadableFile, byte[]> {
+
+        @ProcessElement
+        public void processElement(@Element FileIO.ReadableFile element, OutputReceiver<byte[]> out) {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(Channels.newInputStream(element.openSeekable()), StandardCharsets.UTF_16));
+                 ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                 BufferedWriter writer = new BufferedWriter(
+                         new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8))) {
+
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    writer.write(line);
+                    writer.newLine();
+                }
+                out.output(byteArrayOutputStream.toByteArray());
+                System.out.println("File conversion completed successfully.");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     static class ParseJsonFn extends DoFn<String, String> {
