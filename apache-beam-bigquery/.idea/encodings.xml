@@ -3,7 +3,7 @@
   <component name="Encoding">
     <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/test/resources/com/github/starnowski/apache/beam/fun/json-data-utf-16.json" charset="UTF-16" />
+    <file url="file://$PROJECT_DIR$/src/test/resources/com/github/starnowski/apache/beam/fun/json-data-utf-16.json" charset="UTF-16BE" />
     <file url="file://$PROJECT_DIR$/src/test/resources/com/github/starnowski/apache/beam/fun/json-data.json" charset="UTF-8" />
   </component>
 </project>

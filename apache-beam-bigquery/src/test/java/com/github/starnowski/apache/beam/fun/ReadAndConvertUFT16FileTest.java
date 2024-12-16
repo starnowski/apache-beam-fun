@@ -189,7 +189,7 @@ public class ReadAndConvertUFT16FileTest {
             }
 
             try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(Channels.newInputStream(element.openSeekable()), detectedCharset == null ? StandardCharsets.UTF_8 : detectedCharset));
+                    new InputStreamReader(Channels.newInputStream(element.openSeekable()), detectedCharset));
                  ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                  BufferedWriter writer = new BufferedWriter(
                          new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8))) {
@@ -219,6 +219,7 @@ public class ReadAndConvertUFT16FileTest {
             } catch (IOException e) {
                 // Handle the error if parsing fails
                 System.err.println("Failed to parse JSON: " + element);
+                e.printStackTrace();
             }
         }
     }
